@@ -195,10 +195,12 @@ promotion-gates.yaml      Gate statuses and target requirements
 
 ## Documentation
 
+- [docs/USER_GUIDE.md](docs/USER_GUIDE.md) — Guest network setup, static MTU, offload tuning, and troubleshooting
+- [docs/ADMIN_GUIDE.md](docs/ADMIN_GUIDE.md) — OCI packaging, host hardening, admission policy, and incident response
+- [docs/RUNBOOK.md](docs/RUNBOOK.md) — Lab deployment, verification, and quarantine runbook
+- [docs/ADMISSION.md](docs/ADMISSION.md) — Admission schema, 6D vector state, and cryptographic receipts
 - [VALIDATION.md](VALIDATION.md) — Test matrix, MTU boundary results, and verification status
 - [GATES.md](GATES.md) — Security audit gates and remediated bug list
-- [docs/RUNBOOK.md](docs/RUNBOOK.md) — Deployment, verification, and quarantine runbook
-- [docs/ADMISSION.md](docs/ADMISSION.md) — Admission schema, 6D vector state, and receipts
 - [docs/references.md](docs/references.md) — Upstream Linux kernel commits and CVE notes
 
 ---
