@@ -64,6 +64,29 @@ static int iface_down(const char *name)
  return !(req.ifr_flags & IFF_UP);
 }
 
+#ifdef __linux__
+#include <linux/sockios.h>
+#include <linux/ethtool.h>
+static int iface_tx_csum_offload(const char *name)
+{
+ if (!name) return -1;
+ size_t len = strlen(name);
+ if (len == 0 || len >= IFNAMSIZ) return -1;
+ struct ifreq req = {};
+ memcpy(req.ifr_name, name, len + 1);
+ struct ethtool_value eval = { .cmd = ETHTOOL_GTXCSUM };
+ req.ifr_data = (caddr_t)&eval;
+ int fd = socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+ if (fd < 0) return -1;
+ int err = ioctl(fd, SIOCETHTOOL, &req);
+ close(fd);
+ if (err) return -1;
+ return eval.data != 0;
+}
+#else
+static int iface_tx_csum_offload(const char *name) { (void)name; return -1; }
+#endif
+
 static int open_verified_path(const char *path)
 {
  if (!path || path[0] != '/') { errno = EINVAL; return -1; }
@@ -268,6 +291,10 @@ int main(int argc, char **argv)
  int filter_attached = 0;
  if (attaching) {
   if (iface_down(argv[2]) != 1) { fprintf(stderr, "interface must be DOWN\n"); return 1; }
+  int tx_offload = iface_tx_csum_offload(argv[2]);
+  if (tx_offload > 0) {
+   fprintf(stderr, "warning: interface %s has TX checksum offload enabled. On unpatched kernels (< 6.12.113), this allows CHECKSUM_PARTIAL metadata to reach skb_checksum_help(). Recommendation: ethtool -K %s tx off\n", argv[2], argv[2]);
+  }
   obj = verified_object(argv[3], argv[4]);
   if (!obj) { perror("object verification"); return 1; }
   if (bpf_object__load(obj)) { fprintf(stderr, "BPF load failed\n"); goto fail; }
