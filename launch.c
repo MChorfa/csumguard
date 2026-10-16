@@ -624,7 +624,8 @@ static int prod_run_cmd(void *ctx, const char *const *argv, char *out, size_t ca
    }
   } else {
    char discard[256];
-   (void)read(pipefd[0], discard, sizeof(discard));
+   ssize_t nr = read(pipefd[0], discard, sizeof(discard));
+   (void)nr;
   }
   pid_t w = waitpid(pid, &status, WNOHANG);
   if (w == pid) {

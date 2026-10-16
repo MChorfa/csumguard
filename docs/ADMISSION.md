@@ -11,7 +11,7 @@ flowchart TD
     subgraph Appraisal["Preflight Validation (launch_policy.h)"]
         JSON["admission.json<br/>(schema: csumguard-admission/v1)"]
         HOST["uname -r + BPF Object Hash"]
-        JSON & HOST --> VAL{csg_validate_evidence}
+        JSON & HOST --> VAL{"csg_validate_evidence"}
     end
 
     subgraph Attachment["Attachment Check (loader.c)"]
@@ -20,7 +20,7 @@ flowchart TD
     end
 
     subgraph Monitor["6D Vector State Monitoring"]
-        ID --> VEC["State Vector: < P, V, C, E, L, tau >"]
+        ID --> VEC["State Vector: P, V, C, E, L, tau"]
         VEC -->|Poll Matches ID| OK["L=RUNNING, V=POSITIVE, C=COHERENT"]
         VEC -->|Filter Disappears| LOSS["L=QUARANTINED, V=ANTI, C=DECOHERENT"]
     end

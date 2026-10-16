@@ -21,34 +21,34 @@ It drops dangerous guest traffic on a VM's TAP interface before the host kernel 
 ```mermaid
 flowchart LR
     subgraph Guest["Untrusted Guest VM"]
-        VMM["VMM Process<br/>(QEMU / Cloud-Hypervisor)"]
+        VMM["VMM Process<br/>QEMU or Cloud-Hypervisor"]
     end
 
-    subgraph Interface["Host TAP Device (tap0)"]
-        TAP["tap0 (clsact)"]
-        TC["csumguard_in<br/>(eBPF TC Ingress)"]
+    subgraph Interface["Host TAP Device tap0"]
+        TAP["tap0 clsact"]
+        TC["csumguard_in<br/>eBPF TC Ingress"]
     end
 
     subgraph Host["Host Linux Kernel"]
         STACK["Host Network Stack"]
-        SINK["skb_checksum_help<br/>(Vulnerable Sink)"]
+        SINK["skb_checksum_help<br/>Vulnerable Sink"]
     end
 
-    subgraph Supervisor["csumguard_launch (C11 Supervisor)"]
-        MON["Identity Poller<br/>(6D Vector State)"]
-        QUAR["Quarantine Engine<br/>(SIGSTOP -> DOWN -> SIGKILL)"]
-        RING["Hash-Chained Receipt Ring<br/>(64-slot, pthread)"]
+    subgraph Supervisor["csumguard_launch Supervisor"]
+        MON["Identity Poller<br/>6D Vector State"]
+        QUAR["Quarantine Engine<br/>SIGSTOP, DOWN, SIGKILL"]
+        RING["Receipt Ledger<br/>64-slot Ring Buffer"]
     end
 
     VMM -->|TX Frames| TAP
     TAP --> TC
-    TC -->|Admitted TCP/UDP/ARP| STACK
-    TC -.->|DROPPED: Frag / GSO / VLAN / Opt| DROP["Dropped + Counter"]
+    TC -->|Admitted TCP, UDP, ARP| STACK
+    TC -.->|Dropped: Frag, GSO, VLAN, Options| DROP["Dropped + Counter"]
     STACK -.-> SINK
     MON -->|Polls Status| TAP
-    MON -->|Attachment Drift / Loss| QUAR
+    MON -->|Attachment Drift or Loss| QUAR
     QUAR -->|Pauses & Terminates| VMM
-    QUAR -->|Logs Receipts| RING
+    QUAR -->|Flushes Receipts| RING
 ```
 
 ---
@@ -57,26 +57,26 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    PKT["Ingress Frame"] --> ETH{EtherType?}
+    PKT["Ingress Frame"] --> ETH{"EtherType"}
 
-    ETH -->|ARP (0x0806)| ARP{Request / Reply<br/>42B or 60B pad?}
-    ARP -->|Yes| PASS["PASS: Admitted"]
-    ARP -->|No| D_ARP["DROP: Malformed ARP"]
+    ETH -->|ARP 0x0806| ARP{"Request or Reply"}
+    ARP -->|Valid 42B or 60B pad| PASS["PASS: Admitted"]
+    ARP -->|Invalid| D_ARP["DROP: Malformed ARP"]
 
-    ETH -->|IPv4 (0x0800)| IP{IPv4 Header Checks<br/>IHL=5, No Options<br/>MF=0, FragOffset=0<br/>No GSO, Valid Csum?}
-    ETH -->|Other / VLAN| D_ETH["DROP: Non-IPv4 or VLAN"]
+    ETH -->|IPv4 0x0800| IP{"IPv4 Header Checks"}
+    ETH -->|Other or VLAN| D_ETH["DROP: Non-IPv4 or VLAN"]
 
-    IP -->|No| D_IP["DROP: Frag / Option / GSO / Csum"]
-    IP -->|Yes| L4{Protocol?}
+    IP -->|Options, Frag, or GSO| D_IP["DROP: Frag, Option, GSO, or Csum"]
+    IP -->|Valid IHL 5, MF 0, Offset 0| L4{"Transport Protocol"}
 
-    L4 -->|TCP (6)| TCP{Port > 0?<br/>Length Valid?}
-    L4 -->|UDP (17)| UDP{Dst Port > 0?<br/>Length Valid?}
+    L4 -->|TCP proto 6| TCP{"TCP Checks"}
+    L4 -->|UDP proto 17| UDP{"UDP Checks"}
     L4 -->|Other| D_PROTO["DROP: Unsupported Protocol"]
 
-    TCP -->|Yes| PASS
-    TCP -->|No| D_TCP["DROP: Bad TCP Ports/Length"]
-    UDP -->|Yes| PASS
-    UDP -->|No| D_UDP["DROP: Bad UDP Port/Length"]
+    TCP -->|Valid ports and length| PASS
+    TCP -->|Port 0 or invalid length| D_TCP["DROP: Bad TCP"]
+    UDP -->|Valid dst port and length| PASS
+    UDP -->|Port 0 or invalid length| D_UDP["DROP: Bad UDP"]
 ```
 
 ---
@@ -84,28 +84,18 @@ flowchart TD
 ## Supervisor lifecycle and quarantine
 
 ```mermaid
-stateDiagram-v2
-    [*] --> PREFLIGHT: Read admission.json
-    PREFLIGHT --> ATTACHING: Check Object Hash & Kernel Release
-    ATTACHING --> VERIFIED: Loader attaches clsact to DOWN interface
-    VERIFIED --> RUNNING: Drop privileges (Non-root UID/GID)
-    
-    state RUNNING {
-        [*] --> COHERENT: Status matches interface 4-tuple ID
-        COHERENT --> COHERENT: Regular poll OK
-    }
-    
-    RUNNING --> QUARANTINE: ID Mismatch or Filter Disappears
-    
-    state QUARANTINE {
-        [*] --> SIGSTOP: Pause VMM process group
-        SIGSTOP --> LINK_DOWN: Bring TAP interface DOWN
-        LINK_DOWN --> SIGKILL: Terminate VMM process group
-    }
-    
-    QUARANTINE --> EXIT: Flush receipts (200ms timeout)
-    RUNNING --> EXIT: Normal VMM exit
-    EXIT --> [*]
+flowchart TD
+    S0["1. Preflight<br/>Validate admission.json"] --> S1["2. Attachment<br/>Verify Hash & Attach clsact"]
+    S1 --> S2["3. Privilege Drop<br/>Non-root UID/GID & no_new_privs"]
+    S2 --> S3["4. Running<br/>Poll 4-Tuple ID Every 200ms"]
+
+    S3 -->|Poll Matches ID| S3
+    S3 -->|Filter Loss or ID Mismatch| Q0["5. Quarantine: SIGSTOP<br/>Pause VMM Process Group"]
+
+    Q0 --> Q1["6. Quarantine: LINK DOWN<br/>Set TAP Interface Down"]
+    Q1 --> Q2["7. Quarantine: SIGKILL<br/>Terminate Process Group"]
+    Q2 --> Q3["8. Exit<br/>Flush Hash-Chained Receipts"]
+    S3 -->|Normal VM Exit| Q3
 ```
 
 ---
