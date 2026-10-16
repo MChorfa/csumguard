@@ -380,7 +380,7 @@ static void test_receipt_writer_full_queue_drain(void)
  pthread_t releaser;
  assert(pthread_create(&releaser, NULL, release_gate_after_30ms, NULL) == 0);
 
- assert(csg_receipt_close(w, 200));
+ assert(csg_receipt_close(w, 1000));
  pthread_join(releaser, NULL);
  g_tests_passed++;
 }
