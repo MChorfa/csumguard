@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>csumguard Packet Admission Flow</title>
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-accent:  #bf4520;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', serif;
+      --font-mono:     'Geist Mono', monospace;
+    }
+    body {
+      font-family: var(--font-sans);
+      background: var(--color-paper);
+      color: var(--color-ink);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem 2rem;
+    }
+    .frame { max-width: 1080px; width: 100%; }
+    .diagram-container { width: 100%; overflow-x: auto; }
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    h1 {
+      font-family: var(--font-serif);
+      font-size: clamp(1.6rem, 2.5vw + 0.8rem, 2.2rem);
+      font-weight: 400;
+      letter-spacing: -0.02em;
+      line-height: 1.15;
+      color: var(--color-ink);
+      margin-bottom: 1.5rem;
+    }
+    svg { width: 100%; min-width: 960px; display: block; }
+    .cards {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr 0.9fr;
+      gap: 1rem;
+      margin-top: 1.5rem;
+    }
+    .card {
+      background: #ffffff;
+      border: 1px solid rgba(45, 49, 66, 0.12);
+      border-radius: 6px;
+      padding: 1rem 1.25rem;
+    }
+    .card-title {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--color-muted);
+      margin-bottom: 0.5rem;
+    }
+    .card-body {
+      font-size: 0.85rem;
+      line-height: 1.4;
+      color: var(--color-ink);
+    }
+  </style>
+</head>
+<body>
+  <div class="frame">
+    <div class="eyebrow">TC Ingress Filter · Classification Logic</div>
+    <h1>csumguard Packet Admission Flow</h1>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 960 560" width="960" height="560" role="img" aria-labelledby="flow-title flow-desc">
+        <title id="flow-title">csumguard Packet Admission Decision Flow</title>
+        <desc id="flow-desc">Decision flowchart showing L2, L3, and L4 packet classification checks at TC ingress before admitting traffic to the host stack.</desc>
+
+        <defs>
+          <pattern id="dot-grid-flow" x="0" y="0" width="16" height="16" patternUnits="userSpaceOnUse">
+            <circle cx="2" cy="2" r="0.8" fill="#2d3142" fill-opacity="0.12"/>
+          </pattern>
+          <marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#4f5d75"/>
+          </marker>
+          <marker id="arr-drop" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#bf4520"/>
+          </marker>
+          <marker id="arr-pass" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#2d3142"/>
+          </marker>
+        </defs>
+
+        <rect width="960" height="560" fill="#f5f5f5"/>
+        <rect width="960" height="560" fill="url(#dot-grid-flow)"/>
+
+        <!-- Connectors (drawn before nodes) -->
+        <!-- Start -> EtherType -->
+        <line x1="480" y1="70" x2="480" y2="110" stroke="#4f5d75" stroke-width="1.5" marker-end="url(#arr)"/>
+
+        <!-- EtherType -> ARP (left) -->
+        <path d="M 400,150 H 200 V 210" fill="none" stroke="#4f5d75" stroke-width="1.5" marker-end="url(#arr)"/>
+        <rect x="250" y="142" width="90" height="16" fill="#f5f5f5"/>
+        <text x="295" y="154" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">ARP 0x0806</text>
+
+        <!-- EtherType -> IPv4 (down) -->
+        <line x1="480" y1="190" x2="480" y2="220" stroke="#4f5d75" stroke-width="1.5" marker-end="url(#arr)"/>
+        <rect x="440" y="195" width="80" height="16" fill="#f5f5f5"/>
+        <text x="480" y="207" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">IPv4 0x0800</text>
+
+        <!-- EtherType -> Other / VLAN (right) -->
+        <path d="M 560,150 H 760 V 220" fill="none" stroke="#bf4520" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr-drop)"/>
+        <rect x="620" y="142" width="100" height="16" fill="#f5f5f5"/>
+        <text x="670" y="154" fill="#bf4520" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">VLAN / OTHER</text>
+
+        <!-- ARP -> Pass -->
+        <path d="M 200,290 V 460 H 400" fill="none" stroke="#2d3142" stroke-width="1.5" marker-end="url(#arr-pass)"/>
+        <rect x="210" y="360" width="80" height="16" fill="#f5f5f5"/>
+        <text x="250" y="372" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">VALID ARP</text>
+
+        <!-- ARP -> Drop -->
+        <path d="M 120,250 H 60 V 460 H 120" fill="none" stroke="#bf4520" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr-drop)"/>
+        <rect x="50" y="340" width="60" height="16" fill="#f5f5f5"/>
+        <text x="80" y="352" fill="#bf4520" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">MALFORMED</text>
+
+        <!-- IPv4 -> Drop (Options/Frag/GSO) -->
+        <path d="M 570,260 H 760 V 310" fill="none" stroke="#bf4520" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr-drop)"/>
+        <rect x="600" y="252" width="130" height="16" fill="#f5f5f5"/>
+        <text x="665" y="264" fill="#bf4520" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">FRAG / OPT / GSO</text>
+
+        <!-- IPv4 -> L4 Protocol -->
+        <line x1="480" y1="300" x2="480" y2="340" stroke="#4f5d75" stroke-width="1.5" marker-end="url(#arr)"/>
+        <rect x="430" y="312" width="100" height="16" fill="#f5f5f5"/>
+        <text x="480" y="324" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">VALID HEADER</text>
+
+        <!-- L4 -> Pass (TCP/UDP valid) -->
+        <line x1="480" y1="420" x2="480" y2="450" stroke="#2d3142" stroke-width="2" marker-end="url(#arr-pass)"/>
+        <rect x="420" y="425" width="120" height="16" fill="#f5f5f5"/>
+        <text x="480" y="437" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">VALID PORTS</text>
+
+        <!-- L4 -> Drop -->
+        <path d="M 560,380 H 760 V 420" fill="none" stroke="#bf4520" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr-drop)"/>
+        <rect x="600" y="372" width="120" height="16" fill="#f5f5f5"/>
+        <text x="660" y="384" fill="#bf4520" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">PORT 0 / BAD LEN</text>
+
+        <!-- Nodes -->
+        <!-- Node 1: Start (Oval) -->
+        <g id="node-start">
+          <rect x="400" y="30" width="160" height="40" rx="20" fill="#ffffff" stroke="#2d3142" stroke-width="1.2"/>
+          <text x="480" y="55" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" font-weight="600" text-anchor="middle">Ingress Frame</text>
+        </g>
+
+        <!-- Node 2: Decision EtherType (Diamond) -->
+        <g id="node-eth">
+          <polygon points="480,110 560,150 480,190 400,150" fill="#ffffff" stroke="#2d3142" stroke-width="1.5"/>
+          <text x="480" y="146" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" font-weight="600" text-anchor="middle">EtherType?</text>
+          <text x="480" y="160" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">L2 Protocol</text>
+        </g>
+
+        <!-- Node 3: ARP Check (Diamond) -->
+        <g id="node-arp">
+          <polygon points="200,210 280,250 200,290 120,250" fill="#ffffff" stroke="#2d3142" stroke-width="1.5"/>
+          <text x="200" y="246" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" font-weight="600" text-anchor="middle">ARP Structure?</text>
+          <text x="200" y="260" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">42B / 60B Pad</text>
+        </g>
+
+        <!-- Node 4: IPv4 Header (Diamond) -->
+        <g id="node-ip">
+          <polygon points="480,220 570,260 480,300 390,260" fill="#ffffff" stroke="#2d3142" stroke-width="1.5"/>
+          <text x="480" y="255" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" font-weight="600" text-anchor="middle">IPv4 Invariants?</text>
+          <text x="480" y="270" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">IHL=5, MF=0, GSO=0</text>
+        </g>
+
+        <!-- Node 5: L4 Protocol Check (Diamond) -->
+        <g id="node-l4">
+          <polygon points="480,340 560,380 480,420 400,380" fill="#ffffff" stroke="#2d3142" stroke-width="1.5"/>
+          <text x="480" y="375" fill="#2d3142" font-size="12" font-family="'Geist', sans-serif" font-weight="600" text-anchor="middle">L4 Ports &amp; Len?</text>
+          <text x="480" y="390" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">TCP (6) / UDP (17)</text>
+        </g>
+
+        <!-- Node 6: Dropped Destination (Rect, Coral Accent) -->
+        <g id="node-drop">
+          <rect x="680" y="220" width="160" height="260" rx="6" fill="#ffffff" stroke="#bf4520" stroke-width="1.5"/>
+          <rect x="690" y="230" width="60" height="16" rx="2" fill="#bf4520" fill-opacity="0.1"/>
+          <text x="720" y="242" fill="#bf4520" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">DROP</text>
+          <text x="700" y="275" fill="#bf4520" font-size="13" font-family="'Geist', sans-serif" font-weight="600">Drop &amp; Record</text>
+          <text x="700" y="295" fill="#4f5d75" font-size="10" font-family="'Geist Mono', monospace">TC_ACT_SHOT</text>
+          <text x="700" y="325" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">Increments per-CPU</text>
+          <text x="700" y="340" fill="#4f5d75" font-size="9" font-family="'Geist', sans-serif">reason counter in</text>
+          <text x="700" y="355" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace">csg_stats map.</text>
+        </g>
+
+        <!-- Node 7: Admitted Destination (Rect, Dark Accent) -->
+        <g id="node-pass">
+          <rect x="400" y="450" width="160" height="70" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="2"/>
+          <rect x="410" y="460" width="50" height="16" rx="2" fill="#2d3142" fill-opacity="0.1"/>
+          <text x="435" y="472" fill="#2d3142" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" font-weight="600">PASS</text>
+          <text x="410" y="500" fill="#2d3142" font-size="13" font-family="'Geist', sans-serif" font-weight="600">Admit to Stack</text>
+          <text x="510" y="500" fill="#4f5d75" font-size="10" font-family="'Geist Mono', monospace">TC_ACT_OK</text>
+        </g>
+      </svg>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-title">Strict IPv4 &amp; ARP Profile</div>
+        <div class="card-body">
+          Only standard IPv4 packets without options (<code>IHL == 5</code>) and unfragmented payloads (<code>MF == 0</code>, <code>offset == 0</code>) are permitted. VLAN tags and non-standard EtherTypes are immediately dropped.
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Port &amp; Length Sanity</div>
+        <div class="card-body">
+          TCP source and destination ports must be non-zero. UDP destination ports must be non-zero. Declared IP and transport lengths must match actual packet byte lengths.
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">Reason Telemetry</div>
+        <div class="card-body">
+          Every dropped frame updates an exact per-CPU reason bucket in <code>csg_stats</code>, enabling operators to audit drops without packet capture or performance penalty.
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
