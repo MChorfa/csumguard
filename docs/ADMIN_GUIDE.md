@@ -38,21 +38,79 @@ flowchart TD
 
 ## 1. Packaging and OCI distribution
 
-### Building the OCI container image
-`csumguard` provides a multi-stage `Dockerfile` that builds and tests the C11 and eBPF binaries, checks SHA-256 sums, and copies the verified outputs into a minimal scratch image:
+### OCI v1.1 Artifact and attachments architecture
 
-```bash
-# Build the OCI artifact
-docker build -t ghcr.io/mchorfa/csumguard:v0.2.0 .
+`csumguard` is packaged and distributed as an **OCI v1.1 Artifact** (`application/vnd.csumguard.ebpf.v1`) using the ORAS standard. In addition to the compiled eBPF bytecode and C11 binaries, the artifact graph attaches cryptographic evidence referrers:
 
-# Tag and push to your registry
-docker push ghcr.io/mchorfa/csumguard:v0.2.0
+```mermaid
+flowchart TD
+    subgraph Registry["OCI Registry (GHCR / Harbor / Artifactory)"]
+        subgraph Artifact["Root Manifest (application/vnd.csumguard.ebpf.v1)"]
+            CFG["Config: application/vnd.csumguard.config.v1+json"]
+            L1["csumguard_tc.bpf.o (eBPF TC Ingress)"]
+            L2["csumguard_loader (C11 libbpf loader)"]
+            L3["csumguard_launch (C11 supervisor)"]
+            L4["policy.h / detect_policy.h / launch_policy.h"]
+            L5["promotion-gates.yaml / SHA256SUMS"]
+        end
+        ATT1["Evidence Bundle<br/>(application/vnd.csumguard.evidence.v1+json)"]
+        ATT2["CycloneDX SBOM v1.6<br/>(application/vnd.cyclonedx+json)"]
+        ATT3["SLSA Provenance v1.0<br/>(application/vnd.in-toto+json)"]
+
+        ATT1 -.->|subject| Artifact
+        ATT2 -.->|subject| Artifact
+        ATT3 -.->|subject| Artifact
+    end
 ```
 
-### Distributing to hypervisors
-To deploy the binaries onto hypervisor nodes or Kubernetes nodes (e.g., KubeVirt or Kata Containers), extract the volume from the OCI container:
+### Packaging with ORAS
+Run the automated packaging script to build the local OCI layout or push to your registry:
 
 ```bash
+# Build local OCI image layout (offline verifiable)
+./oci/package.sh --layout-dir build/oci-layout --tag v0.2.0
+
+# Push directly to OCI registry with all attachments
+./oci/package.sh --push ghcr.io/mchorfa/csumguard:v0.2.0
+```
+
+### Discovering and verifying attached referrers
+Query the registry or local layout to inspect the attached evidence and SBOM graph:
+
+```bash
+# Discover attachments in registry
+oras discover ghcr.io/mchorfa/csumguard:v0.2.0
+
+# Discover attachments in local layout
+oras discover --oci-layout build/oci-layout:v0.2.0
+
+# Output shows:
+# ghcr.io/mchorfa/csumguard:v0.2.0
+# ├── application/vnd.csumguard.evidence.v1+json
+# ├── application/vnd.cyclonedx+json
+# └── application/vnd.in-toto+json
+```
+
+### Pulling directly on hypervisor hosts (zero-container daemon)
+Hypervisor nodes do not need a running container engine to fetch and install the guard:
+
+```bash
+# Pull eBPF objects and binaries directly into /opt/csumguard
+cd /opt/csumguard
+oras pull ghcr.io/mchorfa/csumguard:v0.2.0
+
+# Verify leaf checksums
+shasum -a 256 -c SHA256SUMS
+```
+
+### Alternative: Building the OCI container image
+For environments relying on Docker or Podman, a multi-stage `Dockerfile` is provided:
+
+```bash
+# Build the container image
+docker build -t ghcr.io/mchorfa/csumguard:v0.2.0 .
+
+# Extract binaries from the container
 docker run --rm \
   -v /opt/csumguard:/target \
   ghcr.io/mchorfa/csumguard:v0.2.0 \

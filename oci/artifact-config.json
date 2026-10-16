@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "artifactType": "application/vnd.csumguard.ebpf.v1",
+  "architecture": "amd64",
+  "os": "linux",
+  "targetKernelRange": ">= 6.1.0, <= 6.12.9",
+  "cve": "CVE-2026-99999",
+  "egressMtu": 1500,
+  "compiler": "clang -std=c11 -target bpf",
+  "toolchain": {
+    "c_standard": "C11",
+    "bpf_target": "bpfel",
+    "bpf_features": ["co-re", "clsact", "fentry"]
+  },
+  "entryPoints": {
+    "tc_ingress": "csumguard_tc.bpf.o:csumguard_in",
+    "fentry_detector": "csumguard_detect.bpf.o:csumguard_detector",
+    "loader": "csumguard_loader",
+    "supervisor": "csumguard_launch"
+  },
+  "sourceRepository": "https://github.com/MChorfa/csumguard",
+  "version": "0.2.0"
+}

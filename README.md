@@ -149,6 +149,25 @@ Fill out `/etc/csumguard/admission.json` and start the VMM under `csumguard_laun
 
 ---
 
+## Packaging and OCI distribution
+
+`csumguard` is packaged and distributed as an **OCI v1.1 Artifact** (`application/vnd.csumguard.ebpf.v1`) with attached cryptographic evidence referrers (SLSA v1.0 provenance, CycloneDX v1.6 SBOM, and verification matrix):
+
+```bash
+# Package local OCI layout and attach all referrers
+./oci/package.sh --layout-dir build/oci-layout --tag v0.2.0
+
+# Discover attached referrers graph
+oras discover --oci-layout build/oci-layout:v0.2.0
+
+# Pull directly on hypervisor hosts without container daemon
+oras pull ghcr.io/mchorfa/csumguard:v0.2.0
+```
+
+See [oci/README.md](oci/README.md) for full OCI media types, descriptors, and Cosign verification workflows.
+
+---
+
 ## Verification
 
 ```bash

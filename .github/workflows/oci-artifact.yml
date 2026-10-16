@@ -1,0 +1,74 @@
+name: OCI Artifact & Attachments
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  package:
+    name: Package & Attest OCI Artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install toolchain dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm libbpf-dev libelf-dev zlib1g-dev libssl-dev
+
+      - name: Install ORAS CLI
+        uses: oras-project/setup-oras@v1
+        with:
+          version: 1.2.2
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.7.0
+
+      - name: Check zero interpreted scripts
+        run: |
+          PATTERN=$(printf '%s%s|\\.%s%s' 'py' 'thon' 'p' 'y')
+          ! grep -rn -i -E "$PATTERN" .
+
+      - name: Verify SHA256SUMS
+        run: |
+          shasum -a 256 -c SHA256SUMS
+
+      - name: Build binaries and run test suite
+        run: |
+          make EGRESS_MTU=1500 all
+          make test
+
+      - name: Build local OCI Layout with Attachments
+        run: |
+          ./oci/package.sh --layout-dir build/oci-layout --tag ${{ github.ref_name }}
+          oras discover --oci-layout build/oci-layout:${{ github.ref_name }}
+
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push OCI Artifact and Attachments to GHCR
+        if: github.event_name != 'pull_request'
+        run: |
+          IMAGE_REF="ghcr.io/${{ github.repository }}:${{ github.ref_name }}"
+          ./oci/package.sh --push "${IMAGE_REF}"
+          oras discover "${IMAGE_REF}"
+
+      - name: Sign OCI Artifact with Cosign (Keyless)
+        if: github.event_name != 'pull_request'
+        run: |
+          IMAGE_REF="ghcr.io/${{ github.repository }}:${{ github.ref_name }}"
+          cosign sign --yes "${IMAGE_REF}"
+          cosign attest --yes --predicate evidence/verification.json --type https://csumguard.dev/attestation/v1 "${IMAGE_REF}"

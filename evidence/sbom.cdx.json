@@ -1,0 +1,114 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:f63824e5-73a6-4c5d-9c39-f6bf93dabe5b",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-10-16T15:00:00Z",
+    "tools": [
+      {
+        "vendor": "csumguard",
+        "name": "csumguard-toolchain",
+        "version": "0.2.0"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "bom-ref": "pkg:generic/csumguard@0.2.0",
+      "name": "csumguard",
+      "version": "0.2.0",
+      "description": "Restricted eBPF TC ingress traffic guard and C11 supervisor for CVE-2026-99999",
+      "licenses": [
+        {
+          "license": {
+            "id": "GPL-2.0-only"
+          }
+        }
+      ]
+    }
+  },
+  "components": [
+    {
+      "type": "file",
+      "bom-ref": "csumguard_tc.bpf.o",
+      "name": "csumguard_tc.bpf.o",
+      "version": "0.2.0",
+      "description": "Clang-compiled eBPF TC ingress filter enforcing packet admission",
+      "scope": "required"
+    },
+    {
+      "type": "file",
+      "bom-ref": "csumguard_detect.bpf.o",
+      "name": "csumguard_detect.bpf.o",
+      "version": "0.2.0",
+      "description": "CO-RE fentry eBPF tracing probe for skb_checksum_help",
+      "scope": "optional"
+    },
+    {
+      "type": "application",
+      "bom-ref": "csumguard_loader",
+      "name": "csumguard_loader",
+      "version": "0.2.0",
+      "description": "Native C11 libbpf loader with OpenSSL SHA-256 appraisal",
+      "scope": "required"
+    },
+    {
+      "type": "application",
+      "bom-ref": "csumguard_launch",
+      "name": "csumguard_launch",
+      "version": "0.2.0",
+      "description": "Native C11 VMM supervisor with receipt hash chaining and process confinement",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:generic/libbpf@1.3.0",
+      "name": "libbpf",
+      "version": "1.3.0",
+      "description": "BPF CO-RE and netlink TC attachment library",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:generic/openssl@3.0.0",
+      "name": "openssl",
+      "version": "3.0.0",
+      "description": "Cryptographic digest computation for leaf appraisal and receipt chaining",
+      "scope": "required"
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:generic/libelf@0.190",
+      "name": "libelf",
+      "version": "0.190",
+      "description": "ELF parsing support for BPF object loading",
+      "scope": "required"
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:generic/csumguard@0.2.0",
+      "dependsOn": [
+        "csumguard_tc.bpf.o",
+        "csumguard_detect.bpf.o",
+        "csumguard_loader",
+        "csumguard_launch"
+      ]
+    },
+    {
+      "ref": "csumguard_loader",
+      "dependsOn": [
+        "pkg:generic/libbpf@1.3.0",
+        "pkg:generic/openssl@3.0.0",
+        "pkg:generic/libelf@0.190"
+      ]
+    },
+    {
+      "ref": "csumguard_launch",
+      "dependsOn": [
+        "pkg:generic/openssl@3.0.0"
+      ]
+    }
+  ]
+}

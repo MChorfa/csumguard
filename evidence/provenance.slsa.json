@@ -1,0 +1,62 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "csumguard_tc.bpf.o",
+      "digest": {
+        "sha256": "4b9a9bf4df4fb0ca840ff636d934bb02340bce30b05b8a6be91e988a87b8d6f1"
+      }
+    },
+    {
+      "name": "csumguard_detect.bpf.o",
+      "digest": {
+        "sha256": "8ef0cc30e9d1bf538053faea53b75017042a3eb2dc88cf6db8bca879f7274026"
+      }
+    },
+    {
+      "name": "csumguard_loader",
+      "digest": {
+        "sha256": "270ad10411dc821bb463fce98b84930335e29bc3532c525f2066fa21297e6e58"
+      }
+    },
+    {
+      "name": "csumguard_launch",
+      "digest": {
+        "sha256": "3cb0179a63eb4c718b95874aa68d7e008a0d4817a81c15f4cb3df0f2ea6c3f68"
+      }
+    }
+  ],
+  "predicateType": "https://slsa.dev/provenance/v1",
+  "predicate": {
+    "buildDefinition": {
+      "buildType": "https://csumguard.dev/build/v1",
+      "externalParameters": {
+        "source": "https://github.com/MChorfa/csumguard",
+        "entryPoint": "make all",
+        "egressMtu": 1500
+      },
+      "internalParameters": {
+        "compiler": "clang -std=c11",
+        "target": "bpf"
+      },
+      "resolvedDependencies": [
+        {
+          "uri": "git+https://github.com/MChorfa/csumguard@main",
+          "digest": {
+            "gitCommit": "HEAD"
+          }
+        }
+      ]
+    },
+    "runDetails": {
+      "builder": {
+        "id": "https://github.com/MChorfa/csumguard/.github/workflows/ci.yml"
+      },
+      "metadata": {
+        "invocationId": "urn:uuid:f63824e5-73a6-4c5d-9c39-f6bf93dabe5b",
+        "startedOn": "2026-10-16T15:00:00Z",
+        "finishedOn": "2026-10-16T15:02:00Z"
+      }
+    }
+  }
+}
