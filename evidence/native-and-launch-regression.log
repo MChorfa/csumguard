@@ -1,0 +1,14 @@
+mkdir -p build
+printf '%s\n' '#define EGRESS_MTU 1500' > build/policy-config.h.tmp
+cmp -s build/policy-config.h.tmp build/policy-config.h || mv build/policy-config.h.tmp build/policy-config.h
+rm -f build/policy-config.h.tmp
+cc -O2 -g -Wall -Wextra -Werror -fstack-protector-strong -std=c11 -include build/policy-config.h tests/test_policy.c -o build/test_policy
+cc -O2 -g -Wall -Wextra -Werror -fstack-protector-strong -std=c11 -D_GNU_SOURCE tests/test_launch.c -o build/test_launch -lpthread
+cc -O2 -g -Wall -Wextra -Werror -fstack-protector-strong -std=c11 -D_GNU_SOURCE -include build/policy-config.h tests/send_frame.c -o build/send_frame
+cc -O2 -g -Wall -Wextra -Werror -fstack-protector-strong -std=c11 -D_GNU_SOURCE launch.c -o build/csumguard_launch -lpthread
+./build/test_policy
+PASS 16553 native policy/predicate checks; 5 legacy acceptance checks across 4 classes reproduced
+./build/test_launch
+PASS 25 native C11 launch admission, vector-state, and containment orchestration checks
+./build/send_frame --self-test
+PASS send_frame 6 fixture frame builds verified

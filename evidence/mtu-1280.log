@@ -1,0 +1,5 @@
+printf '%s\n' '#define EGRESS_MTU 1280' > build/policy-config.h.tmp
+cmp -s build/policy-config.h.tmp build/policy-config.h || mv build/policy-config.h.tmp build/policy-config.h
+rm -f build/policy-config.h.tmp
+cc -O2 -g -Wall -Wextra -Werror -fstack-protector-strong -std=c11 -include build/policy-config.h tests/test_policy.c -o build/test_policy
+PASS 16553 native policy/predicate checks; 5 legacy acceptance checks across 4 classes reproduced

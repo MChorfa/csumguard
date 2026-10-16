@@ -1,0 +1,5 @@
+build/
+vmlinux.h
+vmlinux.h.tmp
+*.o
+.DS_Store

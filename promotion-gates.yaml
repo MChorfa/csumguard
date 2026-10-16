@@ -1,0 +1,24 @@
+api_version: csumguard/v0.2.0
+status: candidate
+verification_outcome: blocked
+profile:
+  layer_2: untagged_ethernet
+  allowed: [ipv4_tcp, ipv4_udp, ethernet_ipv4_arp]
+  rejected: [ipv4_fragments, ip_options, gso, vlan, ipv6, icmp, other_ethertypes, other_ip_protocols]
+  effective_mtu: 1500
+  udp_payload_inspection: false
+promotion:
+  kernel_patch_and_activation: pending
+  bpf_build_and_verifier: pending
+  loader_target_build: pending
+  detector_core_and_attachment: pending
+  real_vmm_tap_fixture: pending
+  backend_checksum_metadata_validation: pending
+  independent_lifecycle_controller: pending
+  target_compatibility: pending
+  resource_and_latency_benchmarks: pending
+  signed_release_provenance: pending
+limitations:
+  polling_is_not_atomic_enforcement: true
+  operator_appraisal_is_not_automatic_attestation: true
+  cve_closed: false

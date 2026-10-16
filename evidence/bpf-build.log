@@ -1,0 +1,6 @@
+printf '%s\n' '#define EGRESS_MTU 1500' > build/policy-config.h.tmp
+cmp -s build/policy-config.h.tmp build/policy-config.h || mv build/policy-config.h.tmp build/policy-config.h
+rm -f build/policy-config.h.tmp
+clang -O2 -g -target bpf -D__TARGET_ARCH_x86 -include build/policy-config.h -I/usr/include/x86_64-linux-gnu -Wall -Werror -c csumguard_tc.bpf.c -o build/csumguard_tc.bpf.o
+make: clang: No such file or directory
+make: *** [Makefile:20: build/csumguard_tc.bpf.o] Error 127

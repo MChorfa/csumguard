@@ -1,0 +1,189 @@
+{
+  "schema_version": "csumguard-verification/v1",
+  "candidate": "v0.2.0",
+  "implementation_status": "candidate_implemented",
+  "fix_workflow_outcome": "blocked",
+  "cve_closed": false,
+  "execution_host_kernel": "6.18.44",
+  "target_host_kernel": "not supplied",
+  "source_archive_sha256": "13d8094bb33561f3f62cc4e853032bdb5641a8ea473239c29d3c58ccd3c5b3d9",
+  "checks": [
+    {
+      "name": "native-and-launch-regression",
+      "command": [
+        "make",
+        "test"
+      ],
+      "environment_overrides": {},
+      "exit_code": 0,
+      "status": "pass",
+      "log": "native-and-launch-regression.log"
+    },
+    {
+      "name": "shell-syntax",
+      "command": [
+        "bash",
+        "-n",
+        "testbed.sh"
+      ],
+      "environment_overrides": {},
+      "exit_code": 0,
+      "status": "pass",
+      "log": "shell-syntax.log"
+    },
+    {
+      "name": "sanitizer-build",
+      "command": [
+        "cc",
+        "-O1",
+        "-g",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-fsanitize=address,undefined",
+        "-fno-omit-frame-pointer",
+        "tests/test_policy.c",
+        "tests/test_launch.c",
+        "tests/send_frame.c"
+      ],
+      "environment_overrides": {},
+      "exit_code": 0,
+      "status": "pass",
+      "log": "sanitizer-build.log"
+    },
+    {
+      "name": "sanitizer-execution",
+      "command": [
+        "./build/test_policy_sanitized",
+        "./build/test_launch_sanitized",
+        "./build/send_frame_sanitized --self-test"
+      ],
+      "environment_overrides": {},
+      "exit_code": 0,
+      "status": "pass",
+      "log": "sanitizer-execution.log"
+    },
+    {
+      "name": "bpf-build",
+      "command": [
+        "make",
+        "all"
+      ],
+      "environment_overrides": {},
+      "exit_code": 2,
+      "status": "blocked",
+      "log": "bpf-build.log"
+    },
+    {
+      "name": "loader-build",
+      "command": [
+        "make",
+        "build/csumguard_loader"
+      ],
+      "environment_overrides": {},
+      "exit_code": 2,
+      "status": "blocked",
+      "log": "loader-build.log"
+    },
+    {
+      "name": "detector-build",
+      "command": [
+        "make",
+        "detector"
+      ],
+      "environment_overrides": {},
+      "exit_code": 2,
+      "status": "blocked",
+      "log": "detector-build.log"
+    },
+    {
+      "name": "live-veth",
+      "command": [
+        "bash",
+        "testbed.sh"
+      ],
+      "environment_overrides": {},
+      "exit_code": 77,
+      "status": "blocked",
+      "log": "live-veth.log"
+    },
+    {
+      "name": "mtu-68",
+      "command": [
+        "make",
+        "EGRESS_MTU=68",
+        "build/test_policy",
+        "then",
+        "./build/test_policy"
+      ],
+      "exit_code": 0,
+      "status": "pass",
+      "log": "mtu-68.log"
+    },
+    {
+      "name": "mtu-1280",
+      "command": [
+        "make",
+        "EGRESS_MTU=1280",
+        "build/test_policy",
+        "then",
+        "./build/test_policy"
+      ],
+      "exit_code": 0,
+      "status": "pass",
+      "log": "mtu-1280.log"
+    },
+    {
+      "name": "mtu-9000",
+      "command": [
+        "make",
+        "EGRESS_MTU=9000",
+        "build/test_policy",
+        "then",
+        "./build/test_policy"
+      ],
+      "exit_code": 0,
+      "status": "pass",
+      "log": "mtu-9000.log"
+    },
+    {
+      "name": "mtu-65535",
+      "command": [
+        "make",
+        "EGRESS_MTU=65535",
+        "build/test_policy",
+        "then",
+        "./build/test_policy"
+      ],
+      "exit_code": 0,
+      "status": "pass",
+      "log": "mtu-65535.log"
+    }
+  ],
+  "sanitizer_limitation": "ASan/UBSan pass across test_policy, test_launch, and send_frame; loader and BPF programs require target Linux kernel headers and libbpf.",
+  "original_behavior_reproduction": "Native adapter runs the original TC function body with helper shims; five acceptance checks across fragment, GSO, IPv6 and inconsistent-length classes reproduce. No original BPF object was loaded.",
+  "legitimate_controls": "IPv4 TCP/UDP, ARP, DF, Ethernet padding and TCP options within valid bounds pass native checks. Restricted profile intentionally denies IPv6/ICMP/VLAN/IP options/GSO/fragments.",
+  "candidate_review": {
+    "cycles": 2,
+    "findings": [
+      "Synchronous receipt fsync could stall monitoring, and full 64-slot queue could drop close sentinel",
+      "Tests failed supported MTU extremes",
+      "Little-endian upper-bit skb->protocol truncation and TCP option tail readability in policy.h",
+      "Detector network_header 0xffff unset sentinel and 16-bit nh + ihl wrap-around in detect_policy.h / csumguard_detect.bpf.c",
+      "Loader attach failure path could destroy TC hook if interface concurrently came UP, and lacked openat ancestor walk / st_nlink == 1",
+      "Supervisor signal re-entrancy during quarantine, conditional SIGKILL on leader poll, ignored cleanup disconnect failure, and stack-use-after-scope on detached receipt writer"
+    ],
+    "disposition": "All findings remediated in pure C11; 16,553 policy checks, 25 C11 launch checks, and 6 frame checks pass under ASan/UBSan."
+  },
+  "pending": [
+    "BPF and loader compile on target toolchain",
+    "Verifier and optional detector CO-RE/attach",
+    "Real virtio/backend/TAP fixture",
+    "Original CVE trigger regression on authorized target",
+    "Independent supervisor/cgroup/TC ownership integration",
+    "Backend checksum metadata validation",
+    "Target compatibility and benchmarks",
+    "Accepted signature/provenance"
+  ]
+}

@@ -1,0 +1,3 @@
+bpftool btf dump file /sys/kernel/btf/vmlinux format c > vmlinux.h.tmp
+/bin/sh: 1: bpftool: not found
+make: *** [Makefile:25: vmlinux.h] Error 127

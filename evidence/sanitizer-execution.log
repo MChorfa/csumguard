@@ -1,0 +1,3 @@
+PASS 16553 native policy/predicate checks; 5 legacy acceptance checks across 4 classes reproduced
+PASS 25 native C11 launch admission, vector-state, and containment orchestration checks
+PASS send_frame 6 fixture frame builds verified

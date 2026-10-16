@@ -1,0 +1,6 @@
+cc -O2 -g -Wall -Wextra -Werror -std=c11 -D_GNU_SOURCE loader.c -o build/csumguard_loader -lbpf -lelf -lz -lcrypto
+loader.c:17:10: fatal error: bpf/libbpf.h: No such file or directory
+   17 | #include <bpf/libbpf.h>
+      |          ^~~~~~~~~~~~~~
+compilation terminated.
+make: *** [Makefile:22: build/csumguard_loader] Error 1
