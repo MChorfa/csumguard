@@ -62,13 +62,15 @@ jobs:
       - name: Push OCI Artifact and Attachments to GHCR
         if: github.event_name != 'pull_request'
         run: |
-          IMAGE_REF="ghcr.io/${{ github.repository }}:${{ github.ref_name }}"
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_REF="ghcr.io/${REPO_LOWER}:${{ github.ref_name }}"
           ./oci/package.sh --push "${IMAGE_REF}"
           oras discover "${IMAGE_REF}"
 
       - name: Sign OCI Artifact with Cosign (Keyless)
         if: github.event_name != 'pull_request'
         run: |
-          IMAGE_REF="ghcr.io/${{ github.repository }}:${{ github.ref_name }}"
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE_REF="ghcr.io/${REPO_LOWER}:${{ github.ref_name }}"
           cosign sign --yes "${IMAGE_REF}"
           cosign attest --yes --predicate evidence/verification.json --type https://csumguard.dev/attestation/v1 "${IMAGE_REF}"
