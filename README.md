@@ -1,49 +1,148 @@
 # csumguard
 
+[![CI](https://github.com/MChorfa/csumguard/actions/workflows/ci.yml/badge.svg)](https://github.com/MChorfa/csumguard/actions/workflows/ci.yml)
 [![Status](https://img.shields.io/badge/Status-v0.2.0--candidate-d97706.svg)](VALIDATION.md)
-[![Language](https://img.shields.io/badge/C-C11-00599C.svg)](Makefile)
-[![Datapath](https://img.shields.io/badge/eBPF-TC%20clsact%20%2B%20CO--RE-2ea44f.svg)](csumguard_tc.bpf.c)
+[![Language](https://img.shields.io/badge/Language-C11%20%2B%20eBPF-00599C.svg)](Makefile)
 [![Sanitizers](https://img.shields.io/badge/ASan%20%2B%20UBSan-passing-2ea44f.svg)](evidence/sanitizer-execution.log)
 [![License](https://img.shields.io/badge/License-GPL--2.0-blue.svg)](LICENSE)
 
-Restricted TC ingress packet-admission guard, optional `skb_checksum_help` detector, verified loader, and supervised VMM launcher for interim containment of [CVE-2026-99999](docs/references.md). The entire stack is C11 and eBPF with zero interpreted runtime scripts.
+An interim packet-admission guard and supervised launcher for [CVE-2026-99999](docs/references.md).
 
-> **Status: v0.2.0 candidate.** Offline policy, detector predicate, launcher, and sanitizer suites pass: `16,553` packet and detector checks, `25` launcher suites, and `6` raw frame self-tests. Live BPF verifier load, `veth`/TAP containment, and target-kernel verification remain **BLOCKED** until executed on a target Linux hypervisor. See [VALIDATION.md](VALIDATION.md).
+It drops dangerous guest traffic on a VM's TAP interface before the host kernel can reach `skb_checksum_help`. Written in pure C11 and eBPF with zero interpreted scripts.
+
+> **Status: v0.2.0 candidate.** All offline policy, detector, launcher, and sanitizer suites pass. Live hypervisor verification remains blocked until run on an isolated Linux host. See [VALIDATION.md](VALIDATION.md).
 >
-> **Shared C11 headers.** Packet classification in [`policy.h`](policy.h), detector invariants in [`detect_policy.h`](detect_policy.h), and launch governance in [`launch_policy.h`](launch_policy.h) are deterministic, I/O-free headers compiled into both the production binaries and the native test binaries.
->
-> **Scope.** This source package narrows guest-to-host network traffic on an untrusted VM interface and automates fail-closed quarantine when the TC guard disappears. It **does not fix the Linux kernel** and is **not a certified product**. See [promotion-gates.yaml](promotion-gates.yaml).
+> **Scope.** This is a traffic filter that reduces attack surface. It is **not a kernel patch** and **does not certify safety**. Upstream kernel fixes are in [docs/references.md](docs/references.md).
 
-## What works
+---
 
-- **Restricted TC ingress admission.** [`policy.h`](policy.h) and [`csumguard_tc.bpf.c`](csumguard_tc.bpf.c) admit only untagged Ethernet IPv4 TCP/UDP with `IHL == 5` and validated 42-byte Ethernet/IPv4 ARP request or reply frames, permitting zero-padded 60-byte minimum Ethernet frames. The classifier drops IPv4 `MF`, nonzero fragment offsets, reserved fragment flags, IP options, GSO metadata where `gso_size > 0` or `gso_segs > 1`, inline or accelerated VLAN tags, truncated or over-MTU frames, bad IPv4 header checksums, zero TCP ports, and zero UDP destination ports. Every packet updates one of 26 per-CPU reason counters in `csg_stats`.
-- **Optional `skb_checksum_help` detector.** [`detect_policy.h`](detect_policy.h) and [`csumguard_detect.bpf.c`](csumguard_detect.bpf.c) attach read-only to `fentry/skb_checksum_help` with CO-RE. The probe checks `ip_summed == CHECKSUM_PARTIAL` before reading the checksum union, guards `network_header + ihl` against 16-bit wrap-around, and increments 4 bounded per-CPU counters in `csg_detect` when `csum_start < network_header + ihl`. It never blocks traffic.
-- **Verified TC loader.** [`loader.c`](loader.c) walks every path component from `/` using `openat` with `O_RDONLY | O_CLOEXEC | O_DIRECTORY | O_NOFOLLOW`, requires `uid == 0` and `(mode & 022) == 0` at every directory hop, snapshots the regular BPF object with `st_nlink == 1`, checks its SHA-256 digest and post-read `fstat`/EOF stability, requires the target interface to be `DOWN`, creates a fresh `clsact` hook, and prints attachment identity and reason counters as JSON. It never removes an active guard if the interface concurrently transitions `UP`.
-- **Supervised VMM launcher.** [`launch_policy.h`](launch_policy.h) and [`launch.c`](launch.c) validate operator admission evidence under schema `csumguard-admission/v1` against `uname().release` and the staged BPF object digest before attachment. The child VMM drops privileges to a non-root UID/GID via `setgroups(0, NULL)`, `setresgid`/`setresuid`, `prctl(PR_SET_NO_NEW_PRIVS, 1)`, closed extra file descriptors, and a scrubbed environment while the parent polls `csumguard_loader status` across a 6D state vector: `presence`, `valence`, `coherence`, `evidence`, `lifecycle`, and `epoch`.
-- **Signal-masked containment and hash-chained receipts.** On attachment loss or identity drift, [`launch.c`](launch.c) blocks `SIGINT`, `SIGTERM`, and `SIGHUP`, pauses the VMM process group with `kill(-pid, SIGSTOP)`, sets the interface `DOWN`, and terminates the process group with `kill(-pid, SIGKILL)`. FIPS 180-4 SHA-256 hash-chained JSONL receipts (`seq`, `prev_sha256`, `entry_sha256`) flush through a 64-slot pthread ring buffer with a `200ms` close deadline so disk stalls cannot delay quarantine.
+## Architecture
 
-## Boundaries that still matter
+```mermaid
+flowchart LR
+    subgraph Guest["Untrusted Guest VM"]
+        VMM["VMM Process<br/>(QEMU / Cloud-Hypervisor)"]
+    end
 
-- **Private skb metadata.** TC ingress cannot inspect or clear driver-private `CHECKSUM_PARTIAL` (`csum_start` and `csum_offset`) fields on small TCP/UDP frames that pass L2/L3/L4 header checks. Until the host kernel or trusted virtio/TAP backend validates those offsets, small valid-looking TCP/UDP packets can still carry malformed checksum metadata.
-- **Protocol exclusions.** IPv6, ICMP, IP options, VLANs, IPv4 fragmentation, and GSO are denied. Dropping ICMP disables ping and Path MTU Discovery; guest MTUs and host routes must match `EGRESS_MTU`.
-- **Tunneling and host datapath.** UDP payloads are opaque, and ARP validation checks frame structure rather than address ownership. Host-side UDP encapsulation or decapsulation, GRO, bridge/netfilter hooks, `XFRM`, `NFQUEUE`, multiqueue TAP, hotplug, and CNI plugins require target-specific validation.
-- **Polling window and process scope.** `csumguard_launch` is a userspace polling supervisor, not an atomic in-kernel lifecycle lock. Drift can occur between status polls, and VMM helpers that escape the session process group require an external cgroup controller.
+    subgraph Interface["Host TAP Device (tap0)"]
+        TAP["tap0 (clsact)"]
+        TC["csumguard_in<br/>(eBPF TC Ingress)"]
+    end
+
+    subgraph Host["Host Linux Kernel"]
+        STACK["Host Network Stack"]
+        SINK["skb_checksum_help<br/>(Vulnerable Sink)"]
+    end
+
+    subgraph Supervisor["csumguard_launch (C11 Supervisor)"]
+        MON["Identity Poller<br/>(6D Vector State)"]
+        QUAR["Quarantine Engine<br/>(SIGSTOP -> DOWN -> SIGKILL)"]
+        RING["Hash-Chained Receipt Ring<br/>(64-slot, pthread)"]
+    end
+
+    VMM -->|TX Frames| TAP
+    TAP --> TC
+    TC -->|Admitted TCP/UDP/ARP| STACK
+    TC -.->|DROPPED: Frag / GSO / VLAN / Opt| DROP["Dropped + Counter"]
+    STACK -.-> SINK
+    MON -->|Polls Status| TAP
+    MON -->|Attachment Drift / Loss| QUAR
+    QUAR -->|Pauses & Terminates| VMM
+    QUAR -->|Logs Receipts| RING
+```
+
+---
+
+## Packet admission flow
+
+```mermaid
+flowchart TD
+    PKT["Ingress Frame"] --> ETH{EtherType?}
+
+    ETH -->|ARP (0x0806)| ARP{Request / Reply<br/>42B or 60B pad?}
+    ARP -->|Yes| PASS["PASS: Admitted"]
+    ARP -->|No| D_ARP["DROP: Malformed ARP"]
+
+    ETH -->|IPv4 (0x0800)| IP{IPv4 Header Checks<br/>IHL=5, No Options<br/>MF=0, FragOffset=0<br/>No GSO, Valid Csum?}
+    ETH -->|Other / VLAN| D_ETH["DROP: Non-IPv4 or VLAN"]
+
+    IP -->|No| D_IP["DROP: Frag / Option / GSO / Csum"]
+    IP -->|Yes| L4{Protocol?}
+
+    L4 -->|TCP (6)| TCP{Port > 0?<br/>Length Valid?}
+    L4 -->|UDP (17)| UDP{Dst Port > 0?<br/>Length Valid?}
+    L4 -->|Other| D_PROTO["DROP: Unsupported Protocol"]
+
+    TCP -->|Yes| PASS
+    TCP -->|No| D_TCP["DROP: Bad TCP Ports/Length"]
+    UDP -->|Yes| PASS
+    UDP -->|No| D_UDP["DROP: Bad UDP Port/Length"]
+```
+
+---
+
+## Supervisor lifecycle and quarantine
+
+```mermaid
+stateDiagram-v2
+    [*] --> PREFLIGHT: Read admission.json
+    PREFLIGHT --> ATTACHING: Check Object Hash & Kernel Release
+    ATTACHING --> VERIFIED: Loader attaches clsact to DOWN interface
+    VERIFIED --> RUNNING: Drop privileges (Non-root UID/GID)
+    
+    state RUNNING {
+        [*] --> COHERENT: Status matches interface 4-tuple ID
+        COHERENT --> COHERENT: Regular poll OK
+    }
+    
+    RUNNING --> QUARANTINE: ID Mismatch or Filter Disappears
+    
+    state QUARANTINE {
+        [*] --> SIGSTOP: Pause VMM process group
+        SIGSTOP --> LINK_DOWN: Bring TAP interface DOWN
+        LINK_DOWN --> SIGKILL: Terminate VMM process group
+    }
+    
+    QUARANTINE --> EXIT: Flush receipts (200ms timeout)
+    RUNNING --> EXIT: Normal VMM exit
+    EXIT --> [*]
+```
+
+---
+
+## Components
+
+| Component | Files | Role |
+|---|---|---|
+| **Packet filter** | [`policy.h`](policy.h), [`csumguard_tc.bpf.c`](csumguard_tc.bpf.c) | Header-only classifier at TC ingress. Permits standard TCP, UDP, and ARP. Drops fragments, options, GSO, and VLANs. 26 per-CPU counters track reasons. |
+| **Checksum detector** | [`detect_policy.h`](detect_policy.h), [`csumguard_detect.bpf.c`](csumguard_detect.bpf.c) | Optional `fentry` probe tracking `CHECKSUM_PARTIAL` packets in the kernel. Increments counters on suspicious offsets. Never blocks. |
+| **Loader** | [`loader.c`](loader.c) | Validates file paths from `/` to prevent symlink attacks. Verifies SHA-256 digests, ensures interface is `DOWN`, and attaches `clsact`. |
+| **VMM launcher** | [`launch.c`](launch.c), [`launch_policy.h`](launch_policy.h) | Validates operator evidence, drops privileges to non-root UID/GID, starts the VMM, and monitors attachment. Pauses and kills the VM if the filter drops. |
+| **Receipt ledger** | [`launch.c`](launch.c) | Asynchronous thread writing FIPS 180-4 SHA-256 hash-chained JSONL records. 64-slot ring buffer prevents disk stalls. |
+
+---
 
 ## Quick start
+
+### 1. Build and test offline
 
 ```bash
 make EGRESS_MTU=1500 all
 make test
 ```
 
-Stage the built binaries and BPF object into a root-owned, non-writable directory such as `/opt/csumguard`, keep the target interface `DOWN`, and verify attachment directly:
+### 2. Attach the filter
+
+Stage the object in a root-owned directory (`/opt/csumguard`), ensure the TAP interface is `DOWN`, and attach:
 
 ```bash
 /opt/csumguard/csumguard_loader attach tap0 /opt/csumguard/csumguard_tc.bpf.o <EXPECTED_SHA256>
 /opt/csumguard/csumguard_loader status tap0 <IFINDEX> <NETNS_INODE> <PROG_ID>
 ```
 
-Launch a VMM under `csumguard_launch` after completing target validation and recording operator appraisal in `/etc/csumguard/admission.json`:
+### 3. Launch with supervision
+
+Fill out `/etc/csumguard/admission.json` and start the VMM under `csumguard_launch`:
 
 ```bash
 /opt/csumguard/csumguard_launch \
@@ -58,73 +157,61 @@ Launch a VMM under `csumguard_launch` after completing target validation and rec
   -- /usr/bin/qemu-system-x86_64 -netdev tap,id=n0,ifname=tap0,script=no,downscript=no
 ```
 
-## Verifying the bundle
+---
 
-Every tracked source file, document, and evidence log is listed in [`SHA256SUMS`](SHA256SUMS):
+## Verification
 
 ```bash
+# Verify all source and evidence hashes
 shasum -a 256 -c SHA256SUMS
-```
 
-Run the offline test suite and the AddressSanitizer + UndefinedBehaviorSanitizer checks:
-
-```bash
+# Run offline test suite
 make test
-clang -std=c11 -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -Wall -Wextra -Werror \
-  -DEGRESS_MTU=1500 -I. tests/test_policy.c -o /tmp/test_policy_asan && /tmp/test_policy_asan
-clang -std=c11 -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -Wall -Wextra -Werror \
-  -I. tests/test_launch.c -lpthread -o /tmp/test_launch_asan && /tmp/test_launch_asan
-clang -std=c11 -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -Wall -Wextra -Werror \
-  tests/send_frame.c -o /tmp/send_frame_asan && /tmp/send_frame_asan --self-test
+
+# Run AddressSanitizer and UndefinedBehaviorSanitizer
+clang -std=c11 -O1 -g -fsanitize=address,undefined -DEGRESS_MTU=1500 -I. tests/test_policy.c -o /tmp/p_asan && /tmp/p_asan
+clang -std=c11 -O1 -g -fsanitize=address,undefined -I. tests/test_launch.c -lpthread -o /tmp/l_asan && /tmp/l_asan
+clang -std=c11 -O1 -g -fsanitize=address,undefined tests/send_frame.c -o /tmp/f_asan && /tmp/f_asan --self-test
 ```
 
-## Build targets
-
-```shell
-make EGRESS_MTU=1500 all           build TC BPF object, loader, launcher, and frame sender on Linux
-make test                          offline unit tests for policy, detector, launcher, and frame sender
-make detector                      build optional fentry/skb_checksum_help CO-RE object on Linux with BTF
-make clean                         remove build/ artifacts and temporary vmlinux headers
-sudo bash testbed.sh               run disposable veth fixture on an isolated Linux lab host; exits 77 if skipped
-```
-
-`EGRESS_MTU` must be between `68` and `65535` and must not exceed the smallest post-encapsulation route MTU on the host. Changing `EGRESS_MTU` invalidates compiled BPF objects and admission digests.
+---
 
 ## Repository layout
 
 ```shell
-policy.h                  Pure C11 restricted L2/L3/L4 packet-admission classifier and reason codes
-detect_policy.h           Pure C11 predicate for suspicious CHECKSUM_PARTIAL offsets
-launch_policy.h           Pure C11 admission validator, 6D vector state, JSON parser, and FIPS 180-4 SHA-256
-csumguard_tc.bpf.c        TC ingress clsact eBPF program and per-CPU reason counter map csg_stats
-csumguard_detect.bpf.c    Optional fentry/skb_checksum_help CO-RE probe and counter map csg_detect
-loader.c                  Verified libbpf/OpenSSL TC loader and status inspector csumguard_loader
-launch.c                  Supervised VMM launcher, containment engine, and hash-chained receipt writer
-tests/                    Offline C11 test suites test_policy.c, test_launch.c, and raw sender send_frame.c
-testbed.sh                Privileged Linux lab veth harness
-docs/                     Operational runbook, admission contract, briefing PDF, and reference register
-evidence/                 Recorded build logs, MTU boundary logs, sanitizer logs, and verification.json
-promotion-gates.yaml      Machine-readable gate statuses and required target-environment evidence
+policy.h                  Packet admission parser and reason codes
+detect_policy.h           Checksum partial predicate
+launch_policy.h           Admission validator, 6D vector state, and SHA-256
+csumguard_tc.bpf.c        TC ingress eBPF program
+csumguard_detect.bpf.c    fentry/skb_checksum_help probe
+loader.c                  libbpf loader and status reporter
+launch.c                  VMM supervisor, quarantine engine, and receipt writer
+tests/                    Offline C11 test suites and frame generator
+testbed.sh                Lab veth test harness
+docs/                     Runbook, admission spec, and CVE references
+evidence/                 Verification logs and test records
+promotion-gates.yaml      Gate statuses and target requirements
 ```
 
-## Design notes
+---
 
-- **Zero runtime script dependencies.** The loader, launcher, raw frame sender, and unit test suites are compiled C11 binaries, and `testbed.sh` is pure Bash. No language interpreter is needed on the hypervisor.
-- **Shared header-only kernels.** `policy.h`, `detect_policy.h`, and `launch_policy.h` make no OS or I/O calls. Offline tests execute the exact C functions compiled into the BPF programs and supervisor.
-- **Descriptor-chained file verification.** Both `loader.c` and `launch.c` walk every directory from `/` using `openat` with `O_NOFOLLOW | O_CLOEXEC`, rejecting symlinks, non-root owners, group- or world-writable directories, hardlinks where `st_nlink != 1`, and concurrent file writes.
-- **Fail-closed hook lifecycle.** If `loader.c` fails after attaching the TC filter and the interface has concurrently transitioned `UP`, cleanup keeps the attached guard in place rather than tearing down `clsact` on a live interface.
+## Boundaries that matter
+
+1. **Private metadata.** The filter checks L2/L3/L4 packet headers. Small valid TCP/UDP packets can still carry malformed checksum metadata until the host kernel or virtio backend checks them.
+2. **Unsupported protocols.** IPv6, ICMP, IP options, and fragmentation are dropped. Guest MTU must match the host route MTU since Path MTU Discovery is disabled.
+3. **Supervisor scope.** The launcher is a polling process. A VM process that escapes its session process group needs an external cgroup manager.
+
+---
 
 ## Documentation
 
-| Document | Purpose |
-| --- | --- |
-| [VALIDATION.md](VALIDATION.md) | Verification matrix, MTU boundary results, and blocked target gates |
-| [GATES.md](GATES.md) | Security audit gate ledger (`G1`..`G8`) and remediated vulnerability catalog |
-| [docs/RUNBOOK.md](docs/RUNBOOK.md) | Operator deployment, verification, quarantine handling, and detector usage |
-| [docs/ADMISSION.md](docs/ADMISSION.md) | Admission schema (`csumguard-admission/v1`), 6D vector state, and receipt format |
-| [docs/references.md](docs/references.md) | Dated primary references for CVE-2026-99999 and Linux kernel fixes |
-| [tests/README.md](tests/README.md) | Offline C11 test suites and raw frame sender usage |
-| [evidence/verification.json](evidence/verification.json) | Machine-readable verification summary and promotion gates |
+- [VALIDATION.md](VALIDATION.md) — Test matrix, MTU boundary results, and verification status
+- [GATES.md](GATES.md) — Security audit gates and remediated bug list
+- [docs/RUNBOOK.md](docs/RUNBOOK.md) — Deployment, verification, and quarantine runbook
+- [docs/ADMISSION.md](docs/ADMISSION.md) — Admission schema, 6D vector state, and receipts
+- [docs/references.md](docs/references.md) — Upstream Linux kernel commits and CVE notes
+
+---
 
 ## License
 

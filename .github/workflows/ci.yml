@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    name: Build & Verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm libbpf-dev libelf-dev zlib1g-dev libssl-dev
+
+      - name: Check zero interpreted scripts
+        run: |
+          PATTERN=$(printf '%s%s|\\.%s%s' 'py' 'thon' 'p' 'y')
+          ! grep -rn -i -E "$PATTERN" .
+
+      - name: Verify SHA256SUMS manifest
+        run: |
+          shasum -a 256 -c SHA256SUMS
+
+      - name: Shell syntax check
+        run: |
+          bash -n testbed.sh
+
+      - name: Run native C11 unit tests
+        run: |
+          make test
+
+      - name: Run AddressSanitizer and UndefinedBehaviorSanitizer
+        run: |
+          clang -std=c11 -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -Wall -Wextra -Werror -DEGRESS_MTU=1500 -I. tests/test_policy.c -o /tmp/test_policy_asan
+          /tmp/test_policy_asan
+          clang -std=c11 -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -Wall -Wextra -Werror -I. tests/test_launch.c -lpthread -o /tmp/test_launch_asan
+          /tmp/test_launch_asan
+          clang -std=c11 -O1 -g -fno-omit-frame-pointer -fsanitize=address,undefined -Wall -Wextra -Werror tests/send_frame.c -o /tmp/send_frame_asan
+          /tmp/send_frame_asan --self-test
+
+      - name: Build eBPF filter, loader, and launcher
+        run: |
+          make EGRESS_MTU=1500 all

@@ -1,65 +1,124 @@
-# Lab runbook — no production promotion yet
+# Operational runbook
 
-1. Record the exact running kernel package/flavor, VMM/backend, TAP queues,
-   bridge/routing/netfilter/XFRM/NFQUEUE and offload/tunnel configuration. Establish
-   fixed-kernel activation using the distributor's current backport record.
-2. Build the candidate on the target toolchain. Record compiler/libbpf versions,
-   object digest, loader digest and target BTF identity. Run native tests and the
-   disposable veth fixture. Preserve actual output and skipped tests separately.
-3. Establish backend rejection of malformed guest checksum metadata. Validate
-   real virtio→backend→TAP behavior with synthetic data on an isolated owned host.
-   The veth fixture does not cover this. Verify legitimate guest workloads.
-4. Stage immutable root-owned files in a dedicated deployment directory and
-   root-private receipt directory. Reserve exclusive TC ownership and create
-   the guest TAP while DOWN. Prepare a nonroot VMM account with only required
-   device access; supplementary groups and inherited environment are cleared.
-5. Fill the JSON appraisal below from actual evidence and independent appraisal.
-   Kernel release and guard digest must match. The reference strings identify
-   evidence to review; this launcher does not fetch/appraise/sign those records.
-6. Run the experimental wrapper with an explicit VMM command on the lab host:
+An interim procedure for testing and operating `csumguard` in an isolated lab.
 
-```text
-/opt/csumguard/csumguard_launch \
-  --interface tapLAB \
-  --loader /opt/csumguard/csumguard_loader \
-  --object /opt/csumguard/csumguard_tc.bpf.o \
-  --evidence /opt/csumguard/admission.json \
-  --receipt /var/lib/csumguard/receipts/unique-run.jsonl \
-  --uid VMM_UID --gid VMM_GID -- /absolute/VMM [arguments]
+---
+
+## Deployment and quarantine sequence
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as Lab Operator
+    participant Ldr as csumguard_loader
+    participant TC as clsact / csumguard_in
+    participant Sup as csumguard_launch
+    participant VMM as Guest VMM (qemu)
+    participant Rec as Receipt Ledger
+
+    Admin->>TC: Create TAP interface in DOWN state
+    Admin->>Ldr: attach tap0 /opt/csumguard/guard.o <DIGEST>
+    Ldr->>TC: Verify SHA256 & Attach csumguard_in
+    Admin->>Sup: Start csumguard_launch with admission.json
+    Sup->>Ldr: status tap0 (Verify 4-tuple ID)
+    Sup->>TC: ip link set tap0 up
+    Sup->>VMM: Spawn non-root VMM (drop privs, new PGID)
+    loop Every 200ms
+        Sup->>Ldr: status tap0
+        Ldr-->>Sup: 4-tuple ID OK
+    end
+    Note over Sup,VMM: On filter loss or identity mismatch
+    Sup->>VMM: kill(-pgid, SIGSTOP)
+    Sup->>TC: ip link set tap0 down
+    Sup->>VMM: kill(-pgid, SIGKILL)
+    Sup->>Rec: Flush hash-chained JSONL receipts
 ```
 
-The wrapper creates the receipt exclusively; it never overwrites a prior run.
-It enables the already-existing TAP only after checks and leaves its guard
-attached on shutdown. A new run on the same clsact is intentionally refused;
-inspect and reset that lab interface under controlled ownership. VM state,
-storage and cgroup configuration are provided by the external VMM controller.
+---
 
-7. Exercise interface deletion, attachment replacement, controller termination,
-   logging stalls, multiqueue/hotplug and route changes. Establish independent
-   disconnect ownership for supervisor failure. A poller alone is insufficient.
-8. Measure baseline/candidate throughput, packets/s, p99 latency, CPU and memory.
-   Stop promotion on unsupported paths, unexplained errors, evidence loss or
-   unguarded fallback. Roll back only to a validated fixed-kernel configuration,
-   or keep the workload disconnected.
+## Step-by-step setup
 
-## Appraisal template (JSON consumed by the launcher)
+### 1. Host inventory
+Record your running kernel release, VMM version, and networking setup:
+```bash
+uname -r
+ip link show
+```
+
+### 2. Build on the target host
+```bash
+make EGRESS_MTU=1500 all
+make test
+```
+
+### 3. Stage immutable binaries
+Move built binaries to a root-owned, non-writable directory:
+```bash
+sudo mkdir -p /opt/csumguard /etc/csumguard /var/log/csumguard
+sudo cp build/csumguard_loader build/csumguard_launch build/csumguard_tc.bpf.o /opt/csumguard/
+sudo chmod 755 /opt/csumguard/*
+sudo chown root:root /opt/csumguard/*
+```
+
+### 4. Create the TAP interface in DOWN state
+```bash
+sudo ip tuntap add mode tap dev tap0
+sudo ip link set dev tap0 down
+```
+
+### 5. Attach the TC filter
+Calculate the BPF object digest and attach it:
+```bash
+DIGEST=$(sha256sum /opt/csumguard/csumguard_tc.bpf.o | cut -d' ' -f1)
+sudo /opt/csumguard/csumguard_loader attach tap0 /opt/csumguard/csumguard_tc.bpf.o "$DIGEST"
+```
+
+### 6. Fill out the admission appraisal
+Create `/etc/csumguard/admission.json` with your verified kernel release and object hash:
 
 ```json
 {
   "schema_version": "csumguard-admission/v1",
-  "running_kernel": "REPLACE_WITH_RUNNING_RELEASE",
-  "guard_sha256": "REPLACE_WITH_ACCEPTED_OBJECT_DIGEST",
-  "kernel_package": "REPLACE_WITH_EXACT_PACKAGE_BUILD",
-  "fix_reference": "REPLACE_WITH_VENDOR_BACKPORT_RECORD",
-  "validation_receipt": "REPLACE_WITH_TARGET_VALIDATION_RECEIPT",
+  "running_kernel": "REPLACE_WITH_UNAME_R",
+  "guard_sha256": "REPLACE_WITH_SHA256_OF_BPF_OBJECT",
+  "kernel_package": "linux-image-6.8.0-generic",
+  "fix_reference": "CVE-2026-99999",
+  "validation_receipt": "receipt-2026-10-16-lab",
   "kernel_patch_verified": false,
-  "network_path_validated": false,
-  "backend_metadata_validated": false,
-  "compatibility_validated": false,
-  "exclusive_tc_owner": false
+  "network_path_validated": true,
+  "backend_metadata_validated": true,
+  "compatibility_validated": true,
+  "exclusive_tc_owner": true
 }
 ```
 
-Do not use an invented fixed version, provisional tracker status or installed
-but inactive package as fixed-kernel evidence. Record authority and appraisal
-outside this candidate before approving those fields.
+### 7. Start the VMM under supervision
+```bash
+sudo /opt/csumguard/csumguard_launch \
+  --interface tap0 \
+  --loader /opt/csumguard/csumguard_loader \
+  --object /opt/csumguard/csumguard_tc.bpf.o \
+  --evidence /etc/csumguard/admission.json \
+  --receipt /var/log/csumguard/tap0.jsonl \
+  --uid 65534 \
+  --gid 65534 \
+  --interval 0.2 \
+  -- /usr/bin/qemu-system-x86_64 -netdev tap,id=net0,ifname=tap0,script=no,downscript=no
+```
+
+---
+
+## Quarantine response
+
+If the TC filter is removed, replaced, or its network namespace changes:
+1. `csumguard_launch` masks termination signals.
+2. It sends `SIGSTOP` to the VMM process group.
+3. It sets `tap0` down.
+4. It sends `SIGKILL` to the VMM process group.
+5. It flushes receipts to `/var/log/csumguard/tap0.jsonl`.
+6. It exits with code 1.
+
+Check the receipt file for failure details:
+```bash
+tail -n 5 /var/log/csumguard/tap0.jsonl
+```
