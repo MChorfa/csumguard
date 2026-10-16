@@ -31,6 +31,7 @@ flowchart LR
 | **G6** | Memory & undefined behavior safety | **VERIFIED** | 0 ASan/UBSan findings on sanitized test runs |
 | **G7** | MTU boundary matrix | **VERIFIED** | All configurations pass (MTU 68, 1280, 1500, 9000, 65535) |
 | **G8** | Manifest integrity | **VERIFIED** | 100% match across all tracked repository files |
+| **G9** | Exploit metadata containment (CVE-2026-99999) | **BLOCKED** | TC ingress filter validates payload bytes, not virtio `csum_start`. Fentry detector is non-blocking. Host kernel patch required. |
 
 ---
 

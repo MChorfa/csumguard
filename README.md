@@ -10,9 +10,10 @@ An interim packet-admission guard and supervised launcher for [CVE-2026-99999](d
 
 It drops dangerous guest traffic on a VM's TAP interface before the host kernel can reach `skb_checksum_help`. Written in pure C11 and eBPF with zero interpreted scripts.
 
-> **Status: v0.2.0 candidate.** All offline policy, detector, launcher, and sanitizer suites pass. Live hypervisor verification remains blocked until run on an isolated Linux host. See [VALIDATION.md](VALIDATION.md).
+> **Security Status: GAL 1 · CVE containment unverified · Promotion stopped.**
+> All offline policy, detector, launcher, and sanitizer suites pass. However, TC ingress filters validate packet payload bytes, not virtio checksum metadata (`csum_start`). The fentry detector observes suspicious metadata but cannot block execution.
 >
-> **Scope.** This is a traffic filter that reduces attack surface. It is **not a kernel patch** and **does not certify safety**. Upstream kernel fixes are in [docs/references.md](docs/references.md).
+> **Authoritative Remediation:** Install the vendor's patched host kernel containing upstream commit [`6785011f8b16`](https://git.kernel.org/linus/6785011f8b16abf40b1e9d8b2e332232b3e68822) and reboot. `csumguard` provides guest traffic hardening and runtime supervision, not verified CVE neutralization. See [VALIDATION.md](VALIDATION.md).
 
 ---
 

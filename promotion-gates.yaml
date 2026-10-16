@@ -1,6 +1,17 @@
 api_version: csumguard/v0.2.0
-status: candidate
+status: candidate_promotion_stopped
 verification_outcome: blocked
+gal: 1
+remediation_advisory:
+  action: update_host_kernel
+  upstream_commit: "6785011f8b16abf40b1e9d8b2e332232b3e68822"
+  fixed_branches:
+    linux_5_10: "5.10.272"
+    linux_5_15: "5.15.223"
+    linux_6_1: "6.1.190"
+    linux_6_6: "6.6.159"
+    linux_6_12: "6.12.113"
+    linux_6_18: "6.18.57"
 profile:
   layer_2: untagged_ethernet
   allowed: [ipv4_tcp, ipv4_udp, ethernet_ipv4_arp]
@@ -9,16 +20,19 @@ profile:
   udp_payload_inspection: false
 promotion:
   kernel_patch_and_activation: pending
-  bpf_build_and_verifier: pending
-  loader_target_build: pending
-  detector_core_and_attachment: pending
+  bpf_build_and_verifier: verified_offline_only
+  loader_target_build: verified_offline_only
+  detector_core_and_attachment: observational_only_non_blocking
   real_vmm_tap_fixture: pending
-  backend_checksum_metadata_validation: pending
+  backend_checksum_metadata_validation: blocked_tc_boundary_blind_to_csum_start
   independent_lifecycle_controller: pending
   target_compatibility: pending
   resource_and_latency_benchmarks: pending
-  signed_release_provenance: pending
+  signed_release_provenance: verified_oci_v1_1
 limitations:
   polling_is_not_atomic_enforcement: true
   operator_appraisal_is_not_automatic_attestation: true
   cve_closed: false
+  cve_containment_verified: false
+  invariant_required: "csum_start >= network_header + ip_hdrlen(skb)"
+  architectural_gap: "TC eBPF inspects packet bytes but cannot prevent CHECKSUM_PARTIAL metadata corruption; fentry detector cannot drop packets"
